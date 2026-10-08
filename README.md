@@ -207,4 +207,11 @@ Factory I/O는 노드를 최대 256개까지 Browse합니다. 태그 수가 늘�
 - 이 개발 PC 한 대에서만 시험했습니다. 다른 PC에서의 설치·실행, 두 PC 구성, 인터넷이 없는 설치는 확인하지 못했습니다.
 - Factory I/O 화면에서 컨베이어 데모(센서 → 컨베이어)가 동작하는 것은 확인했습니다. 61개 전체 태그를 Factory I/O 화면에서 연결해 본 것은 아닙니다.
 - MX Component의 정확한 버전, 그리고 다른 CPU 종류에서의 동작은 확인하지 못했습니다.
-- 라이선스 파일은 아직 없습니다. 공개 저장소로 쓰려면 라이선스를 정해야 합니다.
+
+---
+
+## 9. 라이선스
+
+[MIT License](LICENSE) © 2026 woogijeong
+
+이 저장소의 코드에만 적용됩니다. 의존하는 패키지(asyncua, comtypes, PyYAML, cryptography)와 미쓰비시 소프트웨어(GX Works2, MX Component), Factory I/O는 각자의 라이선스를 따릅니다.
