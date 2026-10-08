@@ -1,0 +1,6 @@
+.venv/
+__pycache__/
+certs/
+.omc/
+*.bak
+*.log

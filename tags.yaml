@@ -1,0 +1,79 @@
+﻿plc:
+  driver: mx            # mx | mock
+  station: 1            # MX logical station number (Communication Setup Utility)
+  progid: ActUtlType.ActUtlType
+  ladder: {}            # mock only, e.g. {Y0: M0} copies M0 to Y0
+opcua:
+  endpoint: opc.tcp://127.0.0.1:4840   # LAN: this host's IP, never 0.0.0.0
+  namespace: urn:factory-bridge
+cycle_ms: 30            # calibration knob; the real cycle is ~38 ms idle / ~76-94 ms when an input changed (MX calls cost ~38 ms each)
+tags:
+  # Tag name == PLC address; name the parts in Factory I/O. X/Y/M are bits, D are words.
+  # to_plc = Factory I/O writes it, from_plc = PLC drives it. Use the "contain" filter ;s= in Factory I/O.
+  # X0-X9, X10-X19: sensors / buttons (Factory I/O -> PLC)
+  - {name: X0, address: X0, type: bit, direction: to_plc}
+  - {name: X1, address: X1, type: bit, direction: to_plc}
+  - {name: X2, address: X2, type: bit, direction: to_plc}
+  - {name: X3, address: X3, type: bit, direction: to_plc}
+  - {name: X4, address: X4, type: bit, direction: to_plc}
+  - {name: X5, address: X5, type: bit, direction: to_plc}
+  - {name: X6, address: X6, type: bit, direction: to_plc}
+  - {name: X7, address: X7, type: bit, direction: to_plc}
+  - {name: X8, address: X8, type: bit, direction: to_plc}
+  - {name: X9, address: X9, type: bit, direction: to_plc}
+  - {name: X10, address: X10, type: bit, direction: to_plc}
+  - {name: X11, address: X11, type: bit, direction: to_plc}
+  - {name: X12, address: X12, type: bit, direction: to_plc}
+  - {name: X13, address: X13, type: bit, direction: to_plc}
+  - {name: X14, address: X14, type: bit, direction: to_plc}
+  - {name: X15, address: X15, type: bit, direction: to_plc}
+  - {name: X16, address: X16, type: bit, direction: to_plc}
+  - {name: X17, address: X17, type: bit, direction: to_plc}
+  - {name: X18, address: X18, type: bit, direction: to_plc}
+  - {name: X19, address: X19, type: bit, direction: to_plc}
+  # Y20-Y29: actuators (PLC -> Factory I/O)
+  - {name: Y20, address: Y20, type: bit, direction: from_plc}
+  - {name: Y21, address: Y21, type: bit, direction: from_plc}
+  - {name: Y22, address: Y22, type: bit, direction: from_plc}
+  - {name: Y23, address: Y23, type: bit, direction: from_plc}
+  - {name: Y24, address: Y24, type: bit, direction: from_plc}
+  - {name: Y25, address: Y25, type: bit, direction: from_plc}
+  - {name: Y26, address: Y26, type: bit, direction: from_plc}
+  - {name: Y27, address: Y27, type: bit, direction: from_plc}
+  - {name: Y28, address: Y28, type: bit, direction: from_plc}
+  - {name: Y29, address: Y29, type: bit, direction: from_plc}
+  # Y30-Y39: actuators (PLC -> Factory I/O)
+  - {name: Y30, address: Y30, type: bit, direction: from_plc}
+  - {name: Y31, address: Y31, type: bit, direction: from_plc}
+  - {name: Y32, address: Y32, type: bit, direction: from_plc}
+  - {name: Y33, address: Y33, type: bit, direction: from_plc}
+  - {name: Y34, address: Y34, type: bit, direction: from_plc}
+  - {name: Y35, address: Y35, type: bit, direction: from_plc}
+  - {name: Y36, address: Y36, type: bit, direction: from_plc}
+  - {name: Y37, address: Y37, type: bit, direction: from_plc}
+  - {name: Y38, address: Y38, type: bit, direction: from_plc}
+  - {name: Y39, address: Y39, type: bit, direction: from_plc}
+  # D100-D109: words Factory I/O -> PLC
+  - {name: D100, address: D100, type: word, direction: to_plc}
+  - {name: D101, address: D101, type: word, direction: to_plc}
+  - {name: D102, address: D102, type: word, direction: to_plc}
+  - {name: D103, address: D103, type: word, direction: to_plc}
+  - {name: D104, address: D104, type: word, direction: to_plc}
+  - {name: D105, address: D105, type: word, direction: to_plc}
+  - {name: D106, address: D106, type: word, direction: to_plc}
+  - {name: D107, address: D107, type: word, direction: to_plc}
+  - {name: D108, address: D108, type: word, direction: to_plc}
+  - {name: D109, address: D109, type: word, direction: to_plc}
+  # D110-D120: words PLC -> Factory I/O
+  - {name: D110, address: D110, type: word, direction: from_plc}
+  - {name: D111, address: D111, type: word, direction: from_plc}
+  - {name: D112, address: D112, type: word, direction: from_plc}
+  - {name: D113, address: D113, type: word, direction: from_plc}
+  - {name: D114, address: D114, type: word, direction: from_plc}
+  - {name: D115, address: D115, type: word, direction: from_plc}
+  - {name: D116, address: D116, type: word, direction: from_plc}
+  - {name: D117, address: D117, type: word, direction: from_plc}
+  - {name: D118, address: D118, type: word, direction: from_plc}
+  - {name: D119, address: D119, type: word, direction: from_plc}
+  - {name: D120, address: D120, type: word, direction: from_plc}
+

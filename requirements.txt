@@ -1,0 +1,4 @@
+asyncua
+cryptography<50  # 50.x has no 32-bit Windows wheel; install with --only-binary cryptography
+comtypes; sys_platform == "win32"
+PyYAML
