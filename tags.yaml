@@ -7,8 +7,11 @@ opcua:
   endpoint: opc.tcp://127.0.0.1:4840   # LAN: this host's IP, never 0.0.0.0
   namespace: urn:factory-bridge
 cycle_ms: 30            # calibration knob; the real cycle is ~38 ms idle / ~76-94 ms when an input changed (MX calls cost ~38 ms each)
+# heartbeat: {address: D9500, period_ms: 500}   # optional: the bridge counts 0..32767 in this D device; the ladder stops if it stalls
 tags:
   # Tag name == PLC address; name the parts in Factory I/O. X/Y/M are bits, D are words.
+  # Analog (Factory I/O Float tag): {name: W1, address: D130, type: float, scale: 100, direction: to_plc}  -> PLC gets value * 100
+  # This list can be generated from a CSV: python gen_tags.py io_list.csv   (see io_list.example.csv)
   # to_plc = Factory I/O writes it, from_plc = PLC drives it. Use the "contain" filter ;s= in Factory I/O.
   # X0-X9, X10-X19: sensors / buttons (Factory I/O -> PLC)
   - {name: X0, address: X0, type: bit, direction: to_plc}

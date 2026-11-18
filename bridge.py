@@ -4,6 +4,7 @@ Run with 32-bit Python:  python bridge.py [tags.yaml]
 """
 import asyncio
 import logging
+import math
 import os
 import re
 import socket
@@ -31,6 +32,17 @@ def load_config(path):
     return validate(cfg)
 
 
+def norm_addr(s):
+    """'x0a' -> 'XA', 'D0100' -> 'D100'; None if it is not a device address. X/Y are hex, M/D decimal."""
+    m = ADDR_RE.match(str(s).strip().upper())
+    if not m:
+        return None
+    kind, num = m.groups()
+    if kind in "XY":
+        return kind + format(int(num, 16), "X")
+    return kind + str(int(num)) if num.isdigit() else None
+
+
 def validate(cfg):
     plc, opcua = cfg.setdefault("plc", {}), cfg.setdefault("opcua", {})
     plc.setdefault("driver", "mx")
@@ -50,13 +62,20 @@ def validate(cfg):
         if n in names:
             raise ValueError(f"tag {n!r}: duplicate name")
         names.add(n)
-        t["address"] = str(t.get("address", "")).upper()
-        m = ADDR_RE.match(t["address"])
-        if not m:
-            raise ValueError(f"tag {n!r}: bad address {t['address']!r}")
-        want = "word" if m.group(1) == "D" else "bit"
-        if t.get("type") != want:
-            raise ValueError(f"tag {n!r}: {t['address']} must be type {want}, got {t.get('type')!r}")
+        addr = norm_addr(t.get("address", ""))  # normalised, so D0100 and D100 count as the same device
+        if not addr:
+            raise ValueError(f"tag {n!r}: bad address {t.get('address')!r}")
+        t["address"] = addr
+        want = ("word", "float") if addr[0] == "D" else ("bit",)
+        if t.get("type") not in want:
+            raise ValueError(f"tag {n!r}: {t['address']} must be type {' or '.join(want)}, got {t.get('type')!r}")
+        if t["type"] == "float":
+            # float node <-> int16 device: PLC value = round(node value * scale)
+            sc = t.setdefault("scale", 1)
+            if isinstance(sc, bool) or not isinstance(sc, (int, float)) or not math.isfinite(sc) or sc <= 0:
+                raise ValueError(f"tag {n!r}: scale must be a number > 0, got {sc!r}")
+        elif "scale" in t:
+            raise ValueError(f"tag {n!r}: scale is only for type float")
         if t.get("direction") not in ("to_plc", "from_plc"):
             raise ValueError(f"tag {n!r}: direction must be to_plc or from_plc, got {t.get('direction')!r}")
         if t["address"] in addrs:
@@ -64,6 +83,19 @@ def validate(cfg):
         addrs.add(t["address"])
     if not names:
         raise ValueError("no tags defined")
+    hb = cfg.get("heartbeat")
+    if hb is not None:  # optional: the bridge counts up in a D device so the ladder can detect a dead bridge
+        if not isinstance(hb, dict):
+            raise ValueError("heartbeat must be a mapping with address and period_ms")
+        addr = norm_addr(hb.get("address", ""))
+        if not addr or addr[0] != "D":
+            raise ValueError(f"heartbeat: address must be a D device, got {hb.get('address')!r}")
+        if addr in addrs:
+            raise ValueError(f"heartbeat: address {addr} is already used by a tag")
+        hb["address"] = addr
+        pm = hb.setdefault("period_ms", 500)
+        if isinstance(pm, bool) or not isinstance(pm, (int, float)) or not math.isfinite(pm) or pm <= 0:
+            raise ValueError(f"heartbeat: period_ms must be a number > 0, got {pm!r}")
     if len(names) > 256:
         log.warning("%d tags: Factory I/O browses at most 256 nodes", len(names))
     return cfg
@@ -162,13 +194,6 @@ def make_driver(plc):
 
 
 # ---------------------------------------------------------------- bridge
-def _clamp16(v, name):
-    if not -32768 <= v <= 32767:
-        log.warning("%s=%d out of int16 range, clamped", name, v)
-        v = max(-32768, min(32767, v))
-    return v
-
-
 class Bridge:
     def __init__(self, cfg, driver=None):
         self.cfg = cfg
@@ -180,6 +205,12 @@ class Bridge:
         self.server = None
         self.durations = []
         self._last_w, self._w_at = None, 0.0  # last values written to the PLC and when
+        self._raw = {}  # last raw PLC value pushed to each from_plc node
+        self._bad = {}  # to_plc values already warned about (not finite / out of range)
+        hb = cfg.get("heartbeat")
+        self._hb_dev = [hb["address"]] if hb else []
+        self._hb_period = hb["period_ms"] / 1000 if hb else 0.0
+        self._hb, self._hb_at = 0, 0.0  # heartbeat counter 0..32767 and when it last changed
         self._stop = False
 
     async def _plc(self, fn, *a):
@@ -187,11 +218,29 @@ class Bridge:
 
     @staticmethod
     def _vt(t):
-        return ua.VariantType.Boolean if t["type"] == "bit" else ua.VariantType.Int32
+        return {"bit": ua.VariantType.Boolean, "word": ua.VariantType.Int32, "float": ua.VariantType.Float}[t["type"]]
 
     @staticmethod
-    def _py(t, v):
+    def _py(t, v):  # raw PLC value -> node value
+        if t["type"] == "float":
+            return v / t["scale"]
         return bool(v) if t["type"] == "bit" else int(v)
+
+    def _raw16(self, t, v):  # node value -> raw PLC value (int16)
+        name, why = t["name"], None
+        if t["type"] == "float" and not math.isfinite(v):
+            raw, why = 0, "is not a finite number, writing 0"
+        else:
+            want = round(v * t["scale"]) if t["type"] == "float" else int(v)
+            raw = max(-32768, min(32767, want))
+            if raw != want:
+                why = f"needs {want} in the PLC, out of int16 range, clamped"
+        if why is None:
+            self._bad.pop(name, None)
+        elif self._bad.get(name) != repr(v):  # this runs every cycle: warn once per offending value
+            self._bad[name] = repr(v)
+            log.warning("%s=%r %s", name, v, why)
+        return raw
 
     async def start(self):
         for attempt in range(60):  # MX Open can fail for up to ~1 min after a client was killed without Close()
@@ -231,6 +280,8 @@ class Bridge:
                 ua.NodeId(n, idx), ua.QualifiedName(n, idx), ua.Variant(self._py(t, seed[t["address"]]), self._vt(t)))
             if t["direction"] == "to_plc":
                 await node.set_writable()
+            else:
+                self._raw[n] = seed[t["address"]]
             self.nodes[n] = node
         await s.start()
         log.info("OPC UA server on %s, %d tags", self.cfg["opcua"]["endpoint"], len(self.nodes))
@@ -238,21 +289,24 @@ class Bridge:
     async def cycle(self):
         # A. OPC UA -> PLC: write ALL to_plc values (Factory I/O owns them)
         vals = [await self.nodes[t["name"]].read_value() for t in self.to_tags]
-        ints = [_clamp16(int(v), t["name"]) for v, t in zip(vals, self.to_tags)]
+        ints = [self._raw16(t, v) for v, t in zip(vals, self.to_tags)]
         now = time.monotonic()
+        if self._hb_dev and now - self._hb_at >= self._hb_period:
+            self._hb, self._hb_at = (self._hb + 1) % 32768, now
+        out = ints + [self._hb] * len(self._hb_dev)  # the heartbeat rides in the same write call
         # Each MX call costs ~38 ms (the simulator serialises them), so write only on change, plus a 1 s refresh
         # so a PLC reset or a manual edit of a to_plc address heals within a second.
-        if ints and (ints != self._last_w or now - self._w_at > REFRESH_S):
-            await self._plc(self.driver.write, self.to_devs, ints)
-            self._last_w, self._w_at = ints, now
+        if out and (out != self._last_w or now - self._w_at > REFRESH_S):
+            await self._plc(self.driver.write, self.to_devs + self._hb_dev, out)
+            self._last_w, self._w_at = out, now
         # B. PLC -> OPC UA: read ALL from_plc values, push changes
         if self.from_tags:
             got = await self._plc(self.driver.read, self.from_devs)
             for t, v in zip(self.from_tags, got):
-                node = self.nodes[t["name"]]
-                new = self._py(t, v)
-                if new != await node.read_value():
-                    await node.write_value(ua.Variant(new, self._vt(t)))
+                if v != self._raw[t["name"]]:  # from_plc nodes are read-only for clients, so the raw value is enough
+                    new = self._py(t, v)
+                    await self.nodes[t["name"]].write_value(ua.Variant(new, self._vt(t)))
+                    self._raw[t["name"]] = v
                     self._changed(t["name"], new)
         return ints
 

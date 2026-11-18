@@ -89,8 +89,18 @@ tags:
 |---|---|
 | `name` | 영문·숫자·`_`만, 중복 불가 |
 | `address` | `X`, `Y`, `M`(비트)와 `D`(워드). 같은 주소를 두 태그에 쓸 수 없음 |
-| `type` | `X`, `Y`, `M`은 `bit`, `D`는 `word`. 안 맞으면 시작할 때 태그 이름과 함께 거부 |
+| `type` | `X`, `Y`, `M`은 `bit`, `D`는 `word` 또는 `float`. 안 맞으면 시작할 때 태그 이름과 함께 거부 |
 | `direction` | `to_plc` 또는 `from_plc`. `both`는 지원하지 않음 |
+| `scale` | `float` 태그에만 씀. 0보다 큰 수, 생략하면 1 |
+
+**아날로그 값(`float`):** Factory I/O의 Float 태그(무게, 레벨, 밸브 등 0~10 V)는 OPC UA Float 노드에 연결해야 합니다. `float` 태그는 노드를 Float로 만들고 PLC의 `D`에는 `값 × scale`을 반올림한 정수(int16)로 넣습니다.
+
+```yaml
+  - {name: FIO_WEIGHT, address: D5000, type: float, scale: 100, direction: to_plc}    # 7.25 V → D5000 = 725
+  - {name: FIO_VALVE,  address: D2010, type: float, scale: 100, direction: from_plc}  # D2010 = 500 → 5.0 V
+```
+
+`값 × scale`이 -32768~32767을 벗어나면 잘라서 쓰고 경고를 남깁니다. `scale: 100`이면 ±327.67까지 쓸 수 있습니다.
 
 - **방향은 브리지가 정합니다.** Factory I/O는 노드를 어느 쪽에든 이을 수 있지만, 브리지는 `to_plc` 노드만 PLC에 쓰고 `from_plc` 노드는 PLC에서 읽어 채우며 읽기 전용으로 둡니다. 한 주소의 값을 쓰는 쪽이 하나라서 값이 서로 덮어쓰이지 않습니다.
 - 태그를 바꾸면 서버를 껐다 켜고, Factory I/O에서 **Browse**를 다시 눌러야 합니다.
@@ -124,6 +134,41 @@ tags:
 ```
 
 GX Works2에서 프로그램을 쓰고 시뮬레이터에 쓴 뒤 시뮬레이션을 시작합니다. (이 예시 그대로의 조합은 시험하지 않았고, `X0 → Y2` 래더로 같은 경로를 시험했습니다.)
+
+### 3-5. 하트비트 (브리지가 살아 있는지 PLC가 확인)
+
+`tags.yaml` 맨 위 단계에 아래 한 줄을 넣으면 브리지가 그 `D` 주소의 값을 `period_ms`마다 1씩 올립니다(0~32767 반복). 넣지 않으면 동작하지 않습니다.
+
+```yaml
+heartbeat: {address: D9500, period_ms: 500}
+```
+
+- 래더에서는 이 값이 일정 시간 바뀌지 않으면 통신이 끊긴 것으로 보고 정지시키면 됩니다. 판정 시간은 `period_ms`의 4배 이상을 권합니다. 쓰기 한 번이 수십 ms 걸리고, 시뮬레이터 재연결 중에는 값이 멈추기 때문입니다.
+- 하트비트 주소는 태그 주소와 겹칠 수 없고 OPC UA 노드로는 내보내지 않습니다.
+- 하트비트는 다른 `to_plc` 값과 같은 MX 호출에 실려 나가므로 호출 횟수는 `period_ms`마다 한 번 늘어납니다.
+- 브리지가 죽으면 PLC는 이를 알 수 있지만, Factory I/O의 액추에이터는 마지막 값으로 남습니다(4-6).
+
+### 3-6. I/O 리스트(CSV)로 `tags.yaml` 만들기
+
+태그가 많으면 표로 관리하고 `tags.yaml`을 만들어 냅니다. 엑셀에서 CSV로 저장한 파일을 그대로 쓸 수 있습니다(UTF-8, 한글 Windows 엑셀의 기본 CSV 모두 읽음).
+
+```
+.venv\Scripts\python.exe gen_tags.py io_list.csv
+```
+
+| 열 (한글 머리글도 가능) | 비워 두면 |
+|---|---|
+| `name` (이름) | 주소를 이름으로 씀 |
+| `address` (주소) | 필수 |
+| `type` (타입) | `X`, `Y`, `M`은 `bit`, `D`는 `word`, `scale`이 있는 `D`는 `float` |
+| `direction` (방향) | `X`는 `to_plc`, `Y`는 `from_plc`. `M`, `D`는 반드시 적어야 함 (`in`/`입력`, `out`/`출력`도 가능) |
+| `scale` (배율) | `float`에만 씀 |
+| `comment` (비고) | `tags.yaml`에 주석으로 남음 |
+
+- 예시는 `io_list.example.csv`에 있습니다. `#`로 시작하는 줄은 건너뜁니다.
+- 기존 `tags.yaml`의 `tags:` 윗부분(`plc`, `opcua`, `heartbeat` 등)은 그대로 두고 태그 목록만 바꿉니다. 이전 파일은 `tags.yaml.bak`으로 남깁니다. 설정이 `tags:` 목록 아래에 있으면 지워지지 않도록 실행을 거부하니 위로 옮기세요.
+- 브리지가 시작할 때 하는 검사를 먼저 돌리고, 하나라도 걸리면 파일을 쓰지 않습니다.
+- **Factory I/O용 태그 이름에 `FIO_` 접두어**를 붙이고 Factory I/O의 *Filter names that contain*을 `FIO_`로 바꾸면, 다른 클라이언트용 태그가 256개 한계(4-8)에 들어가지 않습니다. 스크립트가 `FIO_` 태그 수를 세어 256개를 넘으면 경고합니다.
 
 ---
 
@@ -185,7 +230,7 @@ Factory I/O는 노드를 최대 256개까지 Browse합니다. 태그 수가 늘�
 .venv\Scripts\python.exe test_bridge.py
 ```
 
-모의 PLC만 쓰므로 MX Component나 GX Simulator2가 없어도 됩니다. 잘못된 설정 거부, 센서→모터 200ms 이내 반영, 음수 워드, 읽기 전용 노드, 호출 횟수, 값 변화 시에만 쓰기와 PLC 리셋 복구, PLC 2초 단절 후 재연결을 확인합니다.
+모의 PLC만 쓰므로 MX Component나 GX Simulator2가 없어도 됩니다. 잘못된 설정 거부, 센서→모터 200ms 이내 반영, 음수 워드, 읽기 전용 노드, 호출 횟수, 값 변화 시에만 쓰기와 PLC 리셋 복구, PLC 2초 단절 후 재연결을 확인합니다. `float` 태그의 배율 변환·범위 초과 처리, 하트비트의 증가·되돌이·단절 후 재개, CSV에서 `tags.yaml` 생성도 확인합니다.
 
 ---
 
@@ -195,6 +240,8 @@ Factory I/O는 노드를 최대 256개까지 Browse합니다. 태그 수가 늘�
 |---|---|
 | `bridge.py` | 설정 검증, MX/모의 PLC 드라이버, OPC UA 서버, 동기화 루프 |
 | `tags.yaml` | PLC 연결 설정과 태그 목록 |
+| `gen_tags.py` | I/O 리스트 CSV에서 `tags.yaml` 생성 |
+| `io_list.example.csv` | I/O 리스트 예시 |
 | `test_bridge.py` | 모의 PLC 테스트 |
 | `setup.bat` | 32비트 Python 환경 설치 |
 | `start.bat` | 서버 실행 |
@@ -207,6 +254,7 @@ Factory I/O는 노드를 최대 256개까지 Browse합니다. 태그 수가 늘�
 - 이 개발 PC 한 대에서만 시험했습니다. 다른 PC에서의 설치·실행, 두 PC 구성, 인터넷이 없는 설치는 확인하지 못했습니다.
 - Factory I/O 화면에서 컨베이어 데모(센서 → 컨베이어)가 동작하는 것은 확인했습니다. 61개 전체 태그를 Factory I/O 화면에서 연결해 본 것은 아닙니다.
 - MX Component의 정확한 버전, 그리고 다른 CPU 종류에서의 동작은 확인하지 못했습니다.
+- `float` 태그와 하트비트는 모의 PLC 테스트로만 확인했습니다. GX Simulator2와 Factory I/O 화면에서는 아직 시험하지 않았습니다. Factory I/O의 Float 태그가 Float 노드에 대응한다는 것은 Factory I/O 문서 기준입니다.
 
 ---
 

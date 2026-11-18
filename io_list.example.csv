@@ -1,0 +1,14 @@
+﻿name,address,type,direction,scale,comment
+# Factory I/O 센서 (Factory I/O -> PLC). X는 방향을 비워도 to_plc
+FIO_X20,X20,,,,Z1 입고 컨베이어 센서
+FIO_X21,X21,,,,Z1 크레인1 Moving-X
+FIO_D1000,D1000,,to_plc,,Z1 Vision Sensor 값 (정수)
+FIO_D5000,D5000,,to_plc,100,Z5 Conveyor Scale 무게 0~10 V (PLC에는 0~1000)
+# Factory I/O 구동기 (PLC -> Factory I/O). Y는 방향을 비워도 from_plc
+FIO_Y20,Y20,,,,Z1 Loading Conveyor
+FIO_D1010,D1010,,from_plc,,Z1 크레인1 Target Position
+FIO_D2010,D2010,float,from_plc,100,Z2 Tank Fill Valve 0~10 V
+# 웹 SCADA (FIO_ 접두어 없음: Factory I/O 필터에서 빠짐)
+WEB_Z1_STATE,D1900,,from_plc,,Z1 구역 상태
+WEB_ALARM,M900,,from_plc,,알람 발생
+WEB_ORDER_REQ,D9000,,to_plc,,출고 오더 요청
